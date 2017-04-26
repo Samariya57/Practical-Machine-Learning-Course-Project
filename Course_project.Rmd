@@ -1,0 +1,151 @@
+---
+title: "Best prediction model"
+author: "Mariia Danilenko"
+date: "`r format(Sys.time(), '%d/%m/%Y')`"
+output: 
+  html_document:
+    keep_rm: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+```{r echo=FALSE, message=FALSE,warning=FALSE}
+library(caret)
+library(randomForest)
+library(mlbench)
+library(caret)
+library(parallel)
+library(doParallel)
+library(gbm)
+library(plyr)
+library(rpart)
+set.seed(95014)
+```
+# Data
+The training data for this project are available here: [https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv]
+
+The test data are available here: [https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv]
+
+The data for this project come from this source: [http://groupware.les.inf.puc-rio.br/har]. 
+
+Thank them for material!
+
+# Getting and cleaning data  
+
+## Getting
+
+As a first step just read data sets with diven links.
+
+```{r}
+url_train <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+url_tests <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+download.file(url_train, "train.csv")
+download.file(url_tests, "tests.csv")
+
+train_data <- read.csv("train.csv")
+tests_data <- read.csv("tests.csv")
+```
+As a second step take a first look at data with "head" and "summary" functions.
+```{r eval=FALSE}
+head(train_data)
+head(tests_data)
+
+summary(train_data)
+summary(tests_data)
+```
+
+Results are too big to place it hear. However, we discovered, that data contains a lot of "NA" and "#DIV/0!"
+
+## Cleaning
+
+1. Delete nearZeroVar columns with no a lot of unique values.
+2. Remove all columns with more than 70% of NAs.
+3. Delete ID column.
+```{r}
+percent <- 0.7
+n <- dim(train_data)[1]
+delete_list2 <- c(1)
+delete_list1 <- nearZeroVar(train_data)
+train_data1 <- train_data[-delete_list1]
+
+
+for (i in 1:ncol(train_data1)){
+  if (sum(is.na(train_data1[i])) >= n*percent){
+    delete_list2<- c(delete_list2, i)
+  }
+}
+
+train_data2 <- train_data1[-delete_list2]
+dim(train_data2)
+```
+
+Now we have only _58_ clean columns. 
+Split our "train_data2" into "my_train" and "my_test" for cross-validation.
+
+```{r}
+inTrain <- createDataPartition(y=train_data2$classe, p=0.7, list=FALSE)
+my_train <- train_data2[inTrain, ]
+my_test <- train_data2[-inTrain, ]
+```
+
+
+# Models analysis
+
+We are going to use three models: _RandomForest_, _Boosted trees_, _Decision tree_ and _Linear discriminant analysis_.
+For training we have to use parallel calculations because of size of data.
+
+After training we will check accuracy on "my_test" set and choose the best one.
+
+```{r message=FALSE, warning=FALSE}
+cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+registerDoParallel(cluster) 
+fitControl <- trainControl(method = "cv",
+                           number = 10,
+                           allowParallel = TRUE)
+
+model_rpart <- train(classe~.,data=my_train, method="rpart",trControl = fitControl)
+model_gbm <- train(classe~.,data=my_train, method="gbm",trControl = fitControl)
+model_lda <- train(classe~.,data=my_train, method="lda",trControl = fitControl)
+model_rf <- train(classe~.,data=my_train, method="rf",trControl = fitControl)
+
+
+stopCluster(cluster)
+registerDoSEQ()
+
+fit_rf <- predict(model_rf,my_test)
+fit_gbm <- predict(model_gbm,my_test)
+fit_lda <- predict(model_lda,my_test)
+fit_rpart <- predict(model_rpart,my_test)
+
+
+confusionMatrix(fit_rf, my_test$classe)$overall[1]
+confusionMatrix(fit_gbm, my_test$classe)$overall[1]
+confusionMatrix(fit_lda, my_test$classe)$overall[1]
+confusionMatrix(fit_rpart, my_test$classe)$overall[1]
+```
+# Final model and prediction
+
+As final model for our prediction we choose the _Random Forest_ model, because it has the highest occuracy.
+
+We also have to remove same columns at "tests_data" set as at "train_data" before predicting.
+```{r}
+tests_data <- tests_data[-delete_list1]
+tests_data <- tests_data[-delete_list2]
+
+```
+And finally, prediction.
+```{r}
+final_prediction <- predict(fit_rf, tests_data)
+
+final_prediction
+```
+
+
+
+
