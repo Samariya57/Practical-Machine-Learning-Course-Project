@@ -141,7 +141,7 @@ tests_data <- tests_data[-delete_list2]
 ```
 And finally, prediction.
 ```{r}
-final_prediction <- predict(fit_rf, tests_data)
+final_prediction <- predict(model_rf, tests_data)
 
 final_prediction
 ```
